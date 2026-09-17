@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
 use App\Models\User;
@@ -90,6 +91,11 @@ class ChatController extends Controller
             'receiver_id' => $receiverId,
             'message' => $data['message'],
         ]);
+
+        // Kirim real-time ke penerima lewat WebSocket (Reverb).
+        // ShouldBroadcast otomatis di-queue kalau QUEUE_CONNECTION bukan 'sync',
+        // kalau masih 'sync' maka ini jalan langsung (blocking, tapi tetap terkirim).
+        broadcast(new MessageSent($chat))->toOthers();
 
         return response()->json(['message' => 'Pesan terkirim.', 'data' => $chat], 201);
     }
