@@ -9,6 +9,8 @@ use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\ResetPasswordOtp;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -72,9 +74,8 @@ class AuthController extends Controller
      * Tahap 1: user submit email -> sistem cek terdaftar,
      * lalu generate kode verifikasi 6 digit, disimpan di tabel
      * bawaan Laravel `password_reset_tokens` (kolom `token` dipakai
-     * untuk menyimpan kode, bukan token panjang seperti default).
-     * (Untuk tugas kuliah: kode dikembalikan langsung di response.
-     *  Di production seharusnya dikirim via email, bukan di-return.)
+     * untuk menyimpan kode, bukan token panjang seperti default),
+     * lalu dikirim ke email user (lihat App\Notifications\ResetPasswordOtp).
      */
     public function forgotPassword(ForgotPasswordRequest $request)
     {
@@ -91,9 +92,10 @@ class AuthController extends Controller
             ['token' => $code, 'created_at' => now()]
         );
 
+        $user->notify(new ResetPasswordOtp($code));
+
         return response()->json([
-            'message' => 'Kode verifikasi berhasil dibuat.',
-            'dev_only_code' => $code, // TODO: hapus ini setelah integrasi email asli
+            'message' => 'Kode verifikasi telah dikirim ke email Anda.',
         ]);
     }
 
@@ -108,7 +110,7 @@ class AuthController extends Controller
             ->where('token', $request->code)
             ->first();
 
-        if (! $reset || now()->diffInMinutes($reset->created_at) > 15) {
+        if (! $reset || now()->diffInMinutes(Carbon::parse($reset->created_at)) > 15) {
             return response()->json(['message' => 'Kode verifikasi salah atau sudah kedaluwarsa.'], 422);
         }
 
