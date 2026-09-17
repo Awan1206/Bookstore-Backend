@@ -21,6 +21,16 @@ class Order extends Model
         ];
     }
 
+    /**
+     * Pakai order_code (bukan id) untuk route model binding,
+     * karena kasir/admin hanya punya order_code hasil scan QR
+     * (contoh: /admin/orders/ORD-000001/confirm).
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'order_code';
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);

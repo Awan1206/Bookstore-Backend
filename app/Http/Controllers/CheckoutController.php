@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Services\OrderCodeGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class CheckoutController extends Controller
 {
@@ -67,8 +68,9 @@ class CheckoutController extends Controller
         });
 
         return response()->json([
-            'message' => 'Checkout berhasil. Silakan bayar di kasir dengan menunjukkan Kode Pesanan Anda.',
+            'message' => 'Checkout berhasil. Silakan tunjukkan QR Code ini ke kasir untuk konfirmasi pembayaran.',
             'data' => new OrderResource($order->load(['user', 'items.book'])),
+            'qr_code' => $this->generateQrCode($order->order_code),
         ], 201);
     }
 
@@ -81,5 +83,28 @@ class CheckoutController extends Controller
             ->firstOrFail();
 
         return new OrderResource($order);
+    }
+
+    // Ambil ulang QR Code (misal user reload halaman pesanan dan butuh tampilkan QR lagi)
+    public function qrCode(Request $request, string $orderCode)
+    {
+        $order = Order::where('order_code', $orderCode)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'order_code' => $order->order_code,
+                'qr_code' => $this->generateQrCode($order->order_code),
+            ],
+        ]);
+    }
+
+    // Generate QR Code (base64 PNG) berisi Kode Pesanan, dipakai kasir untuk scan konfirmasi
+    private function generateQrCode(string $orderCode): string
+    {
+        $svg = QrCode::format('svg')->size(200)->generate($orderCode);
+
+        return 'data:image/svg+xml;base64,' . base64_encode($svg);
     }
 }
