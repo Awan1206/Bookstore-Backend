@@ -53,19 +53,19 @@ class ChatController extends Controller
     {
         $adminId = $request->user()->id;
 
-        $userIds = Chat::where('receiver_id', $adminId)
-            ->orWhere('sender_id', $adminId)
-            ->get()
-            ->flatMap(fn ($chat) => [$chat->sender_id, $chat->receiver_id])
-            ->unique()
-            ->reject(fn ($id) => $id === $adminId)
-            ->values();
+        // Single query: get distinct user IDs from DB, no PHP collection gymnastics
+        $userIds = Chat::selectRaw('
+                CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END AS other_id', [$adminId])
+            ->where('sender_id', $adminId)
+            ->orWhere('receiver_id', $adminId)
+            ->distinct()
+            ->pluck('other_id');
 
         $users = User::whereIn('id', $userIds)
             ->withCount(['chatsSent as unread_count' => function ($q) use ($adminId) {
                 $q->where('receiver_id', $adminId)->where('is_read', false);
             }])
-            ->get(['id', 'name', 'username']);
+            ->get(['id', 'name', 'username', 'unread_count']);
 
         return response()->json($users);
     }
@@ -74,16 +74,26 @@ class ChatController extends Controller
     {
         $authUser = $request->user();
 
-        $data = $request->validate([
+        $rules = [
             'message' => ['required', 'string', 'max:1000'],
-            'receiver_id' => ['required_if:is_admin_sender,true', 'exists:users,id'],
-        ]);
+        ];
 
         if ($authUser->isAdmin()) {
-            $receiverId = $request->receiver_id;
+            $rules['receiver_id'] = ['required', 'exists:users,id'];
+        }
+
+        $data = $request->validate($rules);
+
+        if ($authUser->isAdmin()) {
+            $receiverId = $data['receiver_id'];
         } else {
             $admin = User::whereHas('role', fn ($q) => $q->where('name', 'admin'))->first();
-            $receiverId = $admin?->id;
+
+            if (! $admin) {
+                return response()->json(['message' => 'Admin tidak ditemukan.'], 500);
+            }
+
+            $receiverId = $admin->id;
         }
 
         $chat = Chat::create([

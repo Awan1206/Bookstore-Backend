@@ -13,15 +13,23 @@ class BookController extends Controller
 {
     public function index()
     {
-        $books = Book::with('category')->latest()->paginate(15);
+        $books = Book::with(['category:id,name'])
+            ->select([
+                'id', 'category_id', 'title',
+                'publish_year', 'stock',
+                'cost_price', 'sell_price',
+                'image', 'created_at',
+            ])
+            ->latest()
+            ->paginate(15);
 
         return response()->json([
-            'data' => BookResource::collection($books->items()),
+            'data' => BookResource::collection($books),
             'meta' => [
                 'current_page' => $books->currentPage(),
-                'per_page' => $books->perPage(),
-                'total' => $books->total(),
-                'last_page' => $books->lastPage(),
+                'per_page'     => $books->perPage(),
+                'total'        => $books->total(),
+                'last_page'    => $books->lastPage(),
             ],
         ]);
     }

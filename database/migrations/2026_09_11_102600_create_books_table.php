@@ -20,6 +20,8 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('image')->nullable(); // path di storage/app/public
             $table->timestamps();
+
+            $table->index('created_at');
         });
     }
 
