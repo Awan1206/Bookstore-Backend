@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Role;
 use App\Models\User;
@@ -71,11 +72,8 @@ class AuthController extends Controller
     }
 
     /**
-     * Tahap 1: user submit email -> sistem cek terdaftar,
-     * lalu generate kode verifikasi 6 digit, disimpan di tabel
-     * bawaan Laravel `password_reset_tokens` (kolom `token` dipakai
-     * untuk menyimpan kode, bukan token panjang seperti default),
-     * lalu dikirim ke email user (lihat App\Notifications\ResetPasswordOtp).
+     * Step 1 — User submits email.
+     * Generate a 6-digit OTP, store it in password_reset_tokens, send via email.
      */
     public function forgotPassword(ForgotPasswordRequest $request)
     {
@@ -85,33 +83,64 @@ class AuthController extends Controller
             return response()->json(['message' => 'Email tidak ditemukan.'], 404);
         }
 
-        $code = (string) random_int(100000, 999999);
+        $otp = (string) random_int(100000, 999999);
 
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $request->email],
-            ['token' => $code, 'created_at' => now()]
+            [
+                'token'      => $otp,
+                'created_at' => now(),
+            ]
         );
 
-        $user->notify(new ResetPasswordOtp($code));
+        $user->notify(new ResetPasswordOtp($otp));
 
         return response()->json([
-            'message' => 'Kode verifikasi telah dikirim ke email Anda.',
+            'message' => 'Kode OTP telah dikirim ke email Anda.',
         ]);
     }
 
     /**
-     * Tahap 2: user submit email + kode + password baru.
-     * Kode dianggap kedaluwarsa setelah 15 menit sejak dibuat.
+     * Step 2 — User submits email + OTP code.
+     * OTP expires after 15 minutes. On success, issue an opaque reset_token
+     * and delete the OTP so it can't be reused.
+     */
+    public function verifyOtp(VerifyOtpRequest $request)
+    {
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->where('token', $request->otp)
+            ->first();
+
+        if (! $record || now()->diffInMinutes(Carbon::parse($record->created_at)) > 15) {
+            return response()->json(['message' => 'Kode OTP salah atau sudah kedaluwarsa.'], 422);
+        }
+
+        $resetToken = 'RESET_' . Str::random(64);
+
+        DB::table('password_reset_tokens')->where('email', $request->email)->update([
+            'token'      => $resetToken,
+            'created_at' => now(),
+        ]);
+
+        return response()->json([
+            'message'     => 'OTP valid. Silakan buat password baru.',
+        ]);
+    }
+
+    /**
+     * Step 3 — User submits reset_token + new password.
+     * Token expires after 15 minutes.
      */
     public function resetPassword(ResetPasswordRequest $request)
     {
-        $reset = DB::table('password_reset_tokens')
+        $record = DB::table('password_reset_tokens')
             ->where('email', $request->email)
-            ->where('token', $request->code)
+            ->where('token', 'like', 'RESET_%')
             ->first();
 
-        if (! $reset || now()->diffInMinutes(Carbon::parse($reset->created_at)) > 15) {
-            return response()->json(['message' => 'Kode verifikasi salah atau sudah kedaluwarsa.'], 422);
+        if (! $record || now()->diffInMinutes(Carbon::parse($record->created_at)) > 15) {
+            return response()->json(['message' => 'Token reset tidak valid atau sudah kedaluwarsa.'], 422);
         }
 
         $user = User::where('email', $request->email)->firstOrFail();

@@ -20,8 +20,9 @@ use Illuminate\Support\Facades\Route;
 */
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);   // tahap 1
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);    // tahap 2
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);  // step 1: input email
+Route::post('/verify-otp',      [AuthController::class, 'verifyOtp']);       // step 2: input OTP
+Route::post('/reset-password',  [AuthController::class, 'resetPassword']);   // step 3: input new password
 
 // Katalog & search buku bisa diakses tanpa login (landing page / browse dulu)
 Route::get('/catalog', [CatalogController::class, 'index']);
